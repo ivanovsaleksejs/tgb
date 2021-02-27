@@ -20,6 +20,7 @@ import org.makeriga.tgbot.MakeRigaTgBot;
 import org.makeriga.tgbot.Settings;
 import org.makeriga.tgbot.features.Feature;
 import org.makeriga.tgbot.features.lovingit.LovingItFeature;
+import org.makeriga.tgbot.helpers.MembersHelper;
 
 public class AwardsFeature extends Feature {
 
@@ -59,32 +60,31 @@ public class AwardsFeature extends Feature {
     public boolean Execute(String text, boolean isPrivateMessage, Integer senderId, String senderTitle, Integer messageId, String chatId) {
 
         // vote
-        if (text.startsWith(CMD__VOTE + " ") || text.startsWith(getWrappedCommand(CMD__VOTE) + " ")) {
-            if (senderId == null)
-                return false;
-            String voteFor = text.substring(text.indexOf(" ") + 1).trim();
+        if (!testCommandWithArguments(CMD__VOTE, text))
+            return false;
 
-            if ("".equals(voteFor) || voteFor.length() > 70)
-                return true;
+        if (senderId == null)
+            return false;
+        String voteFor = text.substring(text.indexOf(" ") + 1).trim();
 
-            String realName = getBot().getRealName(voteFor);
-            if (realName != null)
-                voteFor = realName;
-
-            synchronized (VOTES_LOCK) {
-                try {
-                    FileUtils.writeStringToFile(currentVotesFile, String.format("(%d) %s\n", senderId, voteFor), Charset.defaultCharset(), true);
-                } catch (Throwable t) {
-                    // log error
-                    logger.error("Failed to register vote", t);
-                    sendMessage(chatId, "Sorry, your vote wasn't counted.", senderId);
-                }
-            }
-
+        if (voteFor.length() > 70)
             return true;
+
+        String realName = getBot().getRealName(voteFor);
+        if (realName != null)
+            voteFor = realName;
+
+        synchronized (VOTES_LOCK) {
+            try {
+                FileUtils.writeStringToFile(currentVotesFile, String.format("(%d) %s\n", senderId, voteFor), Charset.defaultCharset(), true);
+            } catch (Throwable t) {
+                // log error
+                logger.error("Failed to register vote", t);
+                sendMessage(chatId, "Sorry, your vote wasn't counted.", senderId);
+            }
         }
 
-        return false;
+        return true;
     }
 
     private void scheduleNextAwardCeremony() {
@@ -111,7 +111,7 @@ public class AwardsFeature extends Feature {
             }
 
             // log
-            logger.info("Scheduled awards ceremony to: " + Settings.DF__TEXT.format(awardsDate));
+            logger.info("Scheduled awards ceremony to: " + Settings.DTF__TEXT.format(awardsDate));
 
             TimerTask awardsTask = new TimerTask() {
                 @Override
@@ -190,11 +190,7 @@ public class AwardsFeature extends Feature {
             sendMessage(chatId, String.format(AWARDS_MESSAGE_FORMAT, winner, winner), null);
 
             // send sticker
-            File icon = new File(iconsDirectory, winner + ".webp");
-            if (!icon.getParent().equals(iconsDirectory.getAbsolutePath()) || !icon.exists()) {
-                icon = lovingItStickerFile;
-            }
-            sendSticker(chatId, null, icon);
+            sendSticker(chatId, null, MembersHelper.getIconFile(settings, winner));
             return winner;
         }
     }

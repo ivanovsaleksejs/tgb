@@ -32,10 +32,9 @@ public class CamerasFeature extends Feature {
 
     @Override
         public boolean Execute(String text, boolean isPrivateMessage, Integer senderId, String senderTitle, Integer messageId, String chatId) {
-
         
         // send an image from 3d printers camera
-        if (CMD__PRINTERCAM.equals(text) || text.equals(getWrappedCommand(CMD__PRINTERCAM))) {
+        if (testCommandWithoutArguments(CMD__PRINTERCAM, text)) {
             String requestKey = chatId + "-" + CMD__PRINTERCAM;
             if (!getBot().TestRequestRate(requestKey)) {
                 sendAntispamMessage(chatId, "Try again in a minute", !isPrivateMessage ? messageId : null, CMD__PRINTERCAM, senderId);
@@ -43,7 +42,7 @@ public class CamerasFeature extends Feature {
             }
 
             // send
-            sendPic(chatId, !isPrivateMessage ? messageId : null, requestKey, "./snapcam", String.format("riharda-printeris-%s.jpg", Settings.DTF__FILE_NAME.format(new Date())));
+            sendPic(chatId, !isPrivateMessage ? messageId : null, requestKey, "./3dprinter.sh", String.format("riharda-printeris-%s.jpg", Settings.DTF__FILE_NAME.format(new Date())));
 
             return true;
         }
@@ -54,7 +53,7 @@ public class CamerasFeature extends Feature {
         try {
             ProcessBuilder builder = new ProcessBuilder();
             builder.command(execName);
-            builder.directory(new File(settings.getHomeDirectory()));
+            builder.directory(new File(settings.getHomeDirectory(), "features/cameras"));
             Process process = builder.start();
             int result = process.waitFor();
             if (result != 0)

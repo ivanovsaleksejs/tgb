@@ -7,6 +7,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.makeriga.tgbot.MakeRigaTgBot;
 import org.makeriga.tgbot.Settings;
 import org.makeriga.tgbot.features.Feature;
+import org.makeriga.tgbot.features.occupants.OccupantsFeature;
 
 public class NotifyArrivalFeature extends Feature {
     
@@ -15,7 +16,9 @@ public class NotifyArrivalFeature extends Feature {
     private static final List<String> ANSWERS__YES = Lists.asList("y", new String[]{"yes", "1", "ja", "jā", "da", "да", "д"});
     private static final List<String> ANSWERS__NO = Lists.asList("n", new String[]{"no", "0", "ne", "nē", "net", "ņet", "нет", "н"});
     private static final List<String> ANSWERS__ABORT = Lists.asList("a", new String[]{"abort", "cancel", "atcelt", "otmena", "отмена", "otmenitj", "otmenit", "отменить"});
-
+    
+    private static final long FORM_EXPIRATION_SECONDS = 120;
+    
     // Edgars hack
     private static final List<String> ANSWERS__THIS_EVENING = Lists.asList("šovakar", new String[]{"sovakar", "shovakar", "this evening", "evening", "večerom", "vecerom", "vecherom", "вечером"});
     private static final int MAGIC_MINUTES = 777;
@@ -25,6 +28,9 @@ public class NotifyArrivalFeature extends Feature {
     private static final String PARDON__Q = "Pardon?";
     
     private final Map<Integer, ArrivalNotification> items = new ConcurrentHashMap<>();
+    private final Map<Integer, Long> expireDates = new ConcurrentHashMap<>();
+    
+    private OccupantsFeature occupantsFeature = null;
     
     public NotifyArrivalFeature(MakeRigaTgBot bot, Settings settings) {
         super(bot, settings);
@@ -36,35 +42,47 @@ public class NotifyArrivalFeature extends Feature {
         
         // commands descriptions
         AddPublicCommandDescription(CMD__NOTIFY_ARRIVAL, "notify about your arrival (private only)");
+        
+        // reference occupants feature
+        occupantsFeature = getBot().getFeatures().containsKey(OccupantsFeature.FEATURE_ID) ? (OccupantsFeature)getBot().getFeatures().get(OccupantsFeature.FEATURE_ID) : null;
     }
     
     @Override
     public boolean Execute(String text, boolean isPrivateMessage, Integer senderId, String senderTitle, Integer messageId, String chatId) {
-        if (!isPrivateMessage && CMD__NOTIFY_ARRIVAL.equals(text) || text.equals(getWrappedCommand(CMD__NOTIFY_ARRIVAL))) {
+        if (!isPrivateMessage && testCommandWithoutArguments(CMD__NOTIFY_ARRIVAL, text)) {
             sendMessage(chatId, "Private only, please.", messageId);
             return true;
         }        
         
-        if (isPrivateMessage && CMD__NOTIFY_ARRIVAL.equals(text)) {
+        if (isPrivateMessage && testCommandWithoutArguments(CMD__NOTIFY_ARRIVAL, text)) {
             createForm(senderId, senderTitle);
-            ProcessArrivalNotification(chatId, senderId, text);
+            ProcessArrivalNotification(chatId, senderId, text, senderTitle);
             return true;
         }
         
         if (isPrivateMessage) {
-            return ProcessArrivalNotification(chatId, senderId, text);
+            return ProcessArrivalNotification(chatId, senderId, text, senderTitle);
         }
         
         return false;
     }
     
-    private boolean ProcessArrivalNotification(String chatId, Integer userId, String text) {
+    private boolean ProcessArrivalNotification(String chatId, Integer userId, String text, String senderTitle) {
         ArrivalNotification not = items.get(userId);
         if (not == null)
             return false;
         
         if (not.step == ArrivalNotification.STEP__FINISHED)
             return true;
+        
+        // check if expired
+        if (expireDates.containsKey(userId) && expireDates.get(userId) < System.currentTimeMillis()) {
+            removeForm(userId);
+            return false;
+        }
+        
+        // reset expiration
+        expireDates.put(userId, System.currentTimeMillis() + FORM_EXPIRATION_SECONDS * 1000);
         
         do {
             text = text.replaceAll(",", ".").toLowerCase();
@@ -75,7 +93,7 @@ public class NotifyArrivalFeature extends Feature {
                 return true;
             }
             
-            if (CMD__NOTIFY_ARRIVAL.equals(text)) {} 
+            if (testCommandWithoutArguments(CMD__NOTIFY_ARRIVAL, text)) {} 
             
             // first q
             else if (not.step == ArrivalNotification.STEP__AFTER_HOURS_Q) {
@@ -156,6 +174,10 @@ public class NotifyArrivalFeature extends Feature {
                     }
                     // send
                     sendPublicMessage(not.toString());
+                    
+                    if (occupantsFeature != null)
+                        occupantsFeature.RegisterArrival(not.arrivalDate, not.leaveDate, not.extraMembers, senderTitle);
+                    
                     removeForm(userId);
                     return true;
                 } catch (Exception t) {
@@ -194,6 +216,9 @@ public class NotifyArrivalFeature extends Feature {
         ArrivalNotification not;
         items.put(userId, not = new ArrivalNotification());
         not.memberName = userTitle;
+        
+        // expire date
+        expireDates.put(userId, System.currentTimeMillis() + 60000);
     }
     
     private void removeForm(Integer userId) {
@@ -207,8 +232,8 @@ public class NotifyArrivalFeature extends Feature {
         try {
             items.get(userId).step = ArrivalNotification.STEP__FINISHED;
             items.remove(userId);
-        } catch (Exception e) {
-        }
+            expireDates.remove(userId);
+        } catch (Exception e) { }
     }
     
     @Override
