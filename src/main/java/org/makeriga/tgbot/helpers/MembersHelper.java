@@ -92,7 +92,7 @@ public class MembersHelper {
             if (!altStickerFile.exists())
                 return stickerFile;
             
-            return System.currentTimeMillis() % 2 == 0 ? stickerFile : altStickerFile;
+            return System.currentTimeMillis() % 16 == 0 ? stickerFile : altStickerFile;
             
         }
         while (false);
